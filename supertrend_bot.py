@@ -121,16 +121,15 @@ def place_order(side: str, qty: float):
     print(f"  [ORDER] {side.upper()} {qty:.6f} BTC — id: {order['id']}")
     return order
 
-def get_candles(limit=50):
-    # Use BTC/USD for the query, but Alpaca data v1beta3 
-    # returns it in a dictionary where the key is the symbol.
+def get_candles(limit=100):
+    # This tells Alpaca: "Give me the most recent bars available"
     params = {
         "symbols":   SYMBOL,    # "BTC/USD"
         "timeframe": TIMEFRAME, # "5Min"
         "limit":     limit,
+        "sort":      "desc"     # IMPORTANT: Get newest candles first
     }
     
-    # We remove the 'feed' param because 'iex' (stocks only) causes 400 errors
     r = requests.get(
         f"{DATA_URL}/v1beta3/crypto/us/bars",
         params=params,
@@ -142,7 +141,6 @@ def get_candles(limit=50):
         r.raise_for_status()
 
     data = r.json()
-    # In v1beta3, bars are nested under the symbol name
     bars = data.get("bars", {}).get(SYMBOL, [])
     
     if not bars:
@@ -152,8 +150,11 @@ def get_candles(limit=50):
     df = pd.DataFrame(bars)
     df["t"] = pd.to_datetime(df["t"])
     df = df.rename(columns={"o":"open","h":"high","l":"low","c":"close","v":"volume"})
+    
+    # Sort it so the bot reads it from oldest to newest for the Supertrend
     df = df.set_index("t").sort_index()
     return df
+
 
 
 
