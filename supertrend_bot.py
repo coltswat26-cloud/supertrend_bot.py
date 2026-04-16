@@ -128,19 +128,31 @@ def close_position():
     else:
         print(f"  [CLOSE] Unexpected status {r.status_code}: {r.text}")
 
-def place_order(side: str, qty: float):
-    payload = {
-        "symbol":        "BTCUSD",
-        "qty":           str(round(qty, 6)),
-        "side":          side,           # "buy" or "sell"
-        "type":          "market",
-        "time_in_force": "gtc",
+def place_order(side, qty):
+    # Alpaca Crypto usually requires rounding to 4-6 decimals
+    qty = round(float(qty), 4)
+    
+    if qty <= 0:
+        print(f"  [SKIPPED] Quantity {qty} is too low to trade.")
+        return
+
+    print(f"  >>> Sending {side.upper()} order for {qty} BTC...")
+    
+    data = {
+        "symbol": SYMBOL,
+        "qty": str(qty),
+        "side": side,
+        "type": "market",
+        "time_in_force": "gtc"
     }
-    r = requests.post(f"{BASE_URL}/v2/orders", json=payload, headers=HEADERS)
-    r.raise_for_status()
-    order = r.json()
-    print(f"  [ORDER] {side.upper()} {qty:.6f} BTC — id: {order['id']}")
-    return order
+    
+    r = requests.post(ORDERS_URL, json=data, headers=HEADERS)
+    
+    if r.status_code == 200:
+        print(f"  [SUCCESS] {side.upper()} order placed successfully!")
+    else:
+        print(f"  [FAILED] Alpaca error: {r.text}")
+
 
 def get_candles(limit=100):
     # This tells Alpaca: "Give me the most recent bars available"
