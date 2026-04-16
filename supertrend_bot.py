@@ -29,6 +29,27 @@ HEADERS = {
     "APCA-API-SECRET-KEY": API_SECRET,
 }
 
+def apply_heikin_ashi(df: pd.DataFrame):
+    df_ha = df.copy()
+    
+    # HA_Close is the average of the current bar
+    df_ha['close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
+
+    # HA_Open is the midpoint of the previous HA candle
+    # We have to loop here because each open depends on the one before it
+    for i in range(1, len(df)):
+        df_ha.iloc[i, df_ha.columns.get_loc('open')] = (df_ha.iloc[i-1]['open'] + df_ha.iloc[i-1]['close']) / 2
+
+    # HA_High is the max of (High, HA_Open, HA_Close)
+    df_ha['high'] = df_ha[['high', 'open', 'close']].max(axis=1)
+    
+    # HA_Low is the min of (Low, HA_Open, HA_Close)
+    df_ha['low'] = df_ha[['low', 'open', 'close']].min(axis=1)
+    
+    return df_ha
+
+
+
 # ── SUPERTREND ────────────────────────────────────────────────────────────────
 def calc_supertrend(df: pd.DataFrame, atr_len: int, mult: float):
     # Extract data to series for easier handling
