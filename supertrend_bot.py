@@ -154,7 +154,7 @@ def place_order(side, qty):
         print(f"  [FAILED] Alpaca error: {r.text}")
 
 
-def get_candles(limit=100):
+def get_candles(limit=300):
     # This tells Alpaca: "Give me the most recent bars available"
     params = {
         "symbols":   SYMBOL,    # "BTC/USD"
