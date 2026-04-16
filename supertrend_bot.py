@@ -181,9 +181,10 @@ def get_candles(limit=100):
 
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
+# ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 def main():
     print("=" * 55)
-    print("  SUPERTREND FLIP BOT — Alpaca Paper | BTC/USD 5m")
+    print("  SUPERTREND FLIP BOT — Heikin Ashi + Alpaca Paper")
     print("=" * 55)
 
     last_candle_time = None
@@ -191,23 +192,26 @@ def main():
 
     while True:
         try:
-            df = get_candles(limit=100)
-            if df.empty:
+            # 1. Get raw candles
+            raw_df = get_candles(limit=100)
+            if raw_df.empty:
                 print("  [WARN] No data. Waiting...")
                 time.sleep(POLL_SECS)
                 continue
 
-            # Only act on a newly closed candle
+            # 2. Convert to Heikin Ashi
+            df = apply_heikin_ashi(raw_df)
+
+            # 3. Check if we have a new 5m candle
             latest_candle_time = df.index[-2]   
             if latest_candle_time == last_candle_time:
-                # No new candle yet, just print heartbeat and wait
-                print(f"  [HEARTBEAT] {datetime.now(timezone.utc).strftime('%H:%M:%S')} | Still on candle {latest_candle_time}")
+                print(f"  [HEARTBEAT] {datetime.now(timezone.utc).strftime('%H:%M:%S')} | Waiting for new candle...")
                 time.sleep(POLL_SECS)
                 continue
 
             last_candle_time = latest_candle_time
 
-            # Calc supertrend logic
+            # 4. Calc supertrend logic on HA candles
             closed = df.iloc[:-1].copy()
             _, direction = calc_supertrend(closed, ATR_LEN, MULT)
 
@@ -218,33 +222,36 @@ def main():
             sell_signal = curr_dir ==  1 and prev_dir == -1  
 
             now   = datetime.now(timezone.utc).strftime("%H:%M:%S")
-            price = closed["close"].iloc[-1]
-            print(f"\n[{now}] NEW CANDLE: {latest_candle_time} | Close: ${price:,.2f} | Dir: {'▲' if curr_dir==-1 else '▼'}")
+            # We use raw_df for the price print so you see the REAL market price
+            price = raw_df["close"].iloc[-1]
+            
+            print(f"\n[{now}] NEW HA CANDLE: {latest_candle_time} | Market Price: ${price:,.2f} | Dir: {'▲' if curr_dir==-1 else '▼'}")
 
             if buy_signal:
-                print("  ► BUY SIGNAL TRIGGERED")
-                # Add trading logic here...
+                print("  ► HA BUY SIGNAL")
                 account = get_account()
                 qty = (float(account["cash"]) * RISK_PCT) / price
                 place_order("buy", qty)
                 current_side = "long"
 
             elif sell_signal:
-                print("  ► SELL SIGNAL TRIGGERED")
-                # Add trading logic here...
+                print("  ► HA SELL SIGNAL")
                 account = get_account()
                 qty = (float(account["cash"]) * RISK_PCT) / price
                 place_order("sell", qty)
                 current_side = "short"
             else:
-                print("  Trend continues. No flip detected.")
+                print("  HA Trend consistent. Monitoring...")
 
         except Exception as e:
             print(f"  [ERROR] {e}")
         
-        # This keeps the container from stopping by staying in the loop
-        print(f"  [WAIT] Sleeping {POLL_SECS}s until next check...")
+        print(f"  [WAIT] Sleeping {POLL_SECS}s...")
         time.sleep(POLL_SECS)
+
+if __name__ == "__main__":
+    main()
+
 
 
 if __name__ == "__main__":
