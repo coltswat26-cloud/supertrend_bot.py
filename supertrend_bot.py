@@ -4,8 +4,8 @@ import time
 from datetime import datetime, timezone
 
 # ── CONFIGURATION ────────────────────────────────────────────────────────────
-API_KEY    = "YOUR_ALPACA_KEY"
-SECRET_KEY = "YOUR_ALPACA_SECRET"
+API_KEY    = "PKZJM666VKP42SMRVCZBZBFAUG"
+SECRET_KEY = "EcM4DmezUF8PopLTA2UjjE3jWFqFZsjFaTvc3e2wyTZB"
 
 # NOTE: Alpaca v1beta3 often requires "BTC/USD" (with the slash)
 SYMBOL     = "BTC/USD" 
