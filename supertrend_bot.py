@@ -31,11 +31,12 @@ HEADERS = {
 
 # ── SUPERTREND ────────────────────────────────────────────────────────────────
 def calc_supertrend(df: pd.DataFrame, atr_len: int, mult: float):
+    # Extract data to series for easier handling
     high  = df["high"]
     low   = df["low"]
     close = df["close"]
 
-    # ATR
+    # ATR calculation
     tr = pd.concat([
         high - low,
         (high - close.shift()).abs(),
@@ -44,40 +45,43 @@ def calc_supertrend(df: pd.DataFrame, atr_len: int, mult: float):
     atr = tr.ewm(alpha=1/atr_len, adjust=False).mean()
 
     hl2 = (high + low) / 2
-    upper = hl2 + mult * atr
-    lower = hl2 - mult * atr
+    upper_band = hl2 + mult * atr
+    lower_band = hl2 - mult * atr
 
-    supertrend = pd.Series(index=df.index, dtype=float)
-    direction  = pd.Series(index=df.index, dtype=int)
+    # Initialize lists to avoid "SettingWithCopy" pandas crashes
+    size = len(df)
+    final_upper = [0.0] * size
+    final_lower = [0.0] * size
+    st_dir      = [1] * size
+    supertrend  = [0.0] * size
 
-    for i in range(1, len(df)):
-        prev_upper = upper.iloc[i-1]
-        prev_lower = lower.iloc[i-1]
-        prev_close = close.iloc[i-1]
-
-        # Lower band: only moves up, never down
-        if lower.iloc[i] < prev_lower or prev_close < prev_lower:
-            lower.iloc[i] = lower.iloc[i]
+    # Calculation loop
+    for i in range(1, size):
+        # Lower band logic: only moves up
+        if lower_band.iloc[i] > final_lower[i-1] or close.iloc[i-1] < final_lower[i-1]:
+            final_lower[i] = lower_band.iloc[i]
         else:
-            lower.iloc[i] = prev_lower
+            final_lower[i] = final_lower[i-1]
 
-        # Upper band: only moves down, never up
-        if upper.iloc[i] > prev_upper or prev_close > prev_upper:
-            upper.iloc[i] = upper.iloc[i]
+        # Upper band logic: only moves down
+        if upper_band.iloc[i] < final_upper[i-1] or close.iloc[i-1] > final_upper[i-1]:
+            final_upper[i] = upper_band.iloc[i]
         else:
-            upper.iloc[i] = prev_upper
+            final_upper[i] = final_upper[i-1]
 
-        # Direction
-        if i == 1:
-            direction.iloc[i] = 1
-        elif supertrend.iloc[i-1] == prev_upper:
-            direction.iloc[i] = -1 if close.iloc[i] > upper.iloc[i] else 1
+        # Determine trend direction
+        if close.iloc[i] > final_upper[i-1]:
+            st_dir[i] = -1 # Bullish Flip
+        elif close.iloc[i] < final_lower[i-1]:
+            st_dir[i] = 1  # Bearish Flip
         else:
-            direction.iloc[i] =  1 if close.iloc[i] < lower.iloc[i] else -1
+            st_dir[i] = st_dir[i-1]
+            
+        supertrend[i] = final_lower[i] if st_dir[i] == -1 else final_upper[i]
 
-        supertrend.iloc[i] = lower.iloc[i] if direction.iloc[i] == -1 else upper.iloc[i]
+    # Convert back to pandas Series so the rest of your bot can read them
+    return pd.Series(supertrend, index=df.index), pd.Series(st_dir, index=df.index)
 
-    return supertrend, direction
 
 
 # ── ALPACA HELPERS ────────────────────────────────────────────────────────────
