@@ -1,6 +1,6 @@
 """
 Supertrend Flip Bot — Alpaca Paper Trading
-BTC/USD | 5-minute candles | 3% notional risk per trade
+BTCUSD | 5-minute candles | 3% notional risk per trade
 Logic: Always in market, flips long<->short on signal
 """
 
@@ -17,7 +17,7 @@ API_SECRET = os.environ["ALPACA_API_SECRET"]
 BASE_URL   = "https://paper-api.alpaca.markets"       # paper trading endpoint
 DATA_URL   = "https://data.alpaca.markets"
 
-SYMBOL     = "BTC/USD"
+SYMBOL     = "BTCUSD"
 TIMEFRAME  = "5Min"
 ATR_LEN    = 10
 MULT       = 1.5
