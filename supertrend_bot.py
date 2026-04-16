@@ -17,7 +17,7 @@ API_SECRET = os.environ["ALPACA_API_SECRET"]
 BASE_URL   = "https://paper-api.alpaca.markets"       # paper trading endpoint
 DATA_URL   = "https://data.alpaca.markets"
 
-SYMBOL     = "BTCUSD"
+SYMBOL     = "BTC/USD"
 TIMEFRAME  = "5Min"
 ATR_LEN    = 10
 MULT       = 1.5
@@ -118,23 +118,39 @@ def place_order(side: str, qty: float):
     return order
 
 def get_candles(limit=50):
+    # Use BTC/USD for the query, but Alpaca data v1beta3 
+    # returns it in a dictionary where the key is the symbol.
     params = {
-        "timeframe": TIMEFRAME,
+        "symbols":   SYMBOL,    # "BTC/USD"
+        "timeframe": TIMEFRAME, # "5Min"
         "limit":     limit,
-        "feed":      "iex",
     }
+    
+    # We remove the 'feed' param because 'iex' (stocks only) causes 400 errors
     r = requests.get(
         f"{DATA_URL}/v1beta3/crypto/us/bars",
-        params={"symbols": SYMBOL, **params},
+        params=params,
         headers=HEADERS,
     )
-    r.raise_for_status()
-    bars = r.json()["bars"].get(SYMBOL, [])
+    
+    if r.status_code != 200:
+        print(f"  [DEBUG] Status: {r.status_code} | Response: {r.text}")
+        r.raise_for_status()
+
+    data = r.json()
+    # In v1beta3, bars are nested under the symbol name
+    bars = data.get("bars", {}).get(SYMBOL, [])
+    
+    if not bars:
+        print(f"  [WARN] No bars returned for {SYMBOL}")
+        return pd.DataFrame()
+
     df = pd.DataFrame(bars)
     df["t"] = pd.to_datetime(df["t"])
     df = df.rename(columns={"o":"open","h":"high","l":"low","c":"close","v":"volume"})
     df = df.set_index("t").sort_index()
     return df
+
 
 
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
