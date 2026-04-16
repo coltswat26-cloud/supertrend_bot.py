@@ -158,76 +158,70 @@ def get_candles(limit=50):
 
 
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
+# ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 def main():
     print("=" * 55)
     print("  SUPERTREND FLIP BOT — Alpaca Paper | BTC/USD 5m")
     print("=" * 55)
 
     last_candle_time = None
-    current_side     = None   # "long" | "short" | None
+    current_side     = None
 
     while True:
         try:
             df = get_candles(limit=100)
+            if df.empty:
+                print("  [WARN] No data. Waiting...")
+                time.sleep(POLL_SECS)
+                continue
 
             # Only act on a newly closed candle
-            latest_candle_time = df.index[-2]   # -1 is still forming
+            latest_candle_time = df.index[-2]   
             if latest_candle_time == last_candle_time:
+                # No new candle yet, just print heartbeat and wait
+                print(f"  [HEARTBEAT] {datetime.now(timezone.utc).strftime('%H:%M:%S')} | Still on candle {latest_candle_time}")
                 time.sleep(POLL_SECS)
                 continue
 
             last_candle_time = latest_candle_time
 
-            # Calc supertrend on closed candles (drop last forming bar)
+            # Calc supertrend logic
             closed = df.iloc[:-1].copy()
             _, direction = calc_supertrend(closed, ATR_LEN, MULT)
 
             prev_dir = direction.iloc[-2]
             curr_dir = direction.iloc[-1]
 
-            buy_signal  = curr_dir == -1 and prev_dir == 1   # flip up
-            sell_signal = curr_dir ==  1 and prev_dir == -1  # flip down
+            buy_signal  = curr_dir == -1 and prev_dir == 1   
+            sell_signal = curr_dir ==  1 and prev_dir == -1  
 
             now   = datetime.now(timezone.utc).strftime("%H:%M:%S")
             price = closed["close"].iloc[-1]
-            print(f"\n[{now}] Candle: {latest_candle_time} | Close: ${price:,.2f} | Dir: {'▲' if curr_dir==-1 else '▼'}")
-
-            if not buy_signal and not sell_signal:
-                print("  No signal.")
-                time.sleep(POLL_SECS)
-                continue
-
-            # Position sizing — 3% notional
-            account  = get_account()
-            balance  = float(account["cash"])
-            notional = balance * RISK_PCT
-            qty      = notional / price
-            print(f"  Balance: ${balance:,.2f} | Notional: ${notional:,.2f} | Qty: {qty:.6f} BTC")
+            print(f"\n[{now}] NEW CANDLE: {latest_candle_time} | Close: ${price:,.2f} | Dir: {'▲' if curr_dir==-1 else '▼'}")
 
             if buy_signal:
-                print("  ► BUY SIGNAL")
-                if current_side == "short":
-                    print("  Closing short...")
-                    close_position()
-                    time.sleep(1)
+                print("  ► BUY SIGNAL TRIGGERED")
+                # Add trading logic here...
+                account = get_account()
+                qty = (float(account["cash"]) * RISK_PCT) / price
                 place_order("buy", qty)
                 current_side = "long"
 
             elif sell_signal:
-                print("  ► SELL SIGNAL")
-                if current_side == "long":
-                    print("  Closing long...")
-                    close_position()
-                    time.sleep(1)
+                print("  ► SELL SIGNAL TRIGGERED")
+                # Add trading logic here...
+                account = get_account()
+                qty = (float(account["cash"]) * RISK_PCT) / price
                 place_order("sell", qty)
                 current_side = "short"
+            else:
+                print("  Trend continues. No flip detected.")
 
-        except KeyboardInterrupt:
-            print("\nBot stopped.")
-            break
         except Exception as e:
             print(f"  [ERROR] {e}")
-
+        
+        # This keeps the container from stopping by staying in the loop
+        print(f"  [WAIT] Sleeping {POLL_SECS}s until next check...")
         time.sleep(POLL_SECS)
 
 
