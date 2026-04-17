@@ -13,7 +13,7 @@ SYMBOL     = "BTC/USD"
 TIMEFRAME  = "5Min"
 ATR_LEN    = 10
 MULT       = 1.5
-BUY_AMOUNT_USD = 100  # Set how many dollars you want to spend per buy
+BUY_AMOUNT_USD = 10000  # Set how many dollars you want to spend per buy
 POLL_SECS  = 30
 
 BASE_URL     = "https://paper-api.alpaca.markets"
