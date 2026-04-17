@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime, timezone
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
-# These pull from your Railway "Variables" tab
+# Pulls from Railway "Variables" tab
 API_KEY    = os.environ.get("ALPACA_API_KEY")
 API_SECRET = os.environ.get("ALPACA_API_SECRET")
 
@@ -17,8 +17,9 @@ MULT       = 1.5
 RISK_PCT   = 0.03  
 POLL_SECS  = 30
 
-# URLs - Included ORDERS_URL to fix the previous "not defined" error
+# UPDATED URLS for Paper Trading Data
 BASE_URL    = "https://paper-api.alpaca.markets"
+# This is the specific endpoint for free crypto data
 DATA_URL    = "https://data.alpaca.markets/v1beta3/crypto/us"
 ACCOUNT_URL = f"{BASE_URL}/v2/account"
 ORDERS_URL  = f"{BASE_URL}/v2/orders"
@@ -31,9 +32,17 @@ HEADERS = {
 # ── DATA & MATH FUNCTIONS ─────────────────────────────────────────────────────
 
 def get_candles(limit=300):
-    params = {"symbols": SYMBOL, "timeframe": TIMEFRAME, "limit": limit, "sort": "desc"}
+    """Fetches candles using the specific crypto bars endpoint"""
+    params = {
+        "symbols": SYMBOL,
+        "timeframe": TIMEFRAME,
+        "limit": limit,
+        "sort": "desc"
+    }
     try:
+        # Knocking on the /bars door
         r = requests.get(f"{DATA_URL}/bars", params=params, headers=HEADERS)
+        
         if r.status_code != 200:
             print(f"  [DEBUG] Status: {r.status_code} | Response: {r.text}")
             return pd.DataFrame()
@@ -84,7 +93,7 @@ def get_account():
     return r.json()
 
 def place_order(side, qty):
-    qty = round(float(qty), 4) # BTC safety rounding
+    qty = round(float(qty), 4) # BTC safe rounding
     if qty <= 0: return
     data = {"symbol": SYMBOL, "qty": str(qty), "side": side, "type": "market", "time_in_force": "gtc"}
     r = requests.post(ORDERS_URL, json=data, headers=HEADERS)
@@ -106,7 +115,8 @@ def main():
             raw_df = get_candles(limit=300)
             
             if raw_df.empty or len(raw_df) < 5:
-                print("  [WAIT] Not enough data. Check your API keys/URLs.")
+                # If we get a 401 here, it's printed by get_candles debug
+                print("  [WAIT] Data pull failed. Retrying in 30s...")
                 time.sleep(POLL_SECS)
                 continue
 
@@ -121,21 +131,23 @@ def main():
                 prev_dir, curr_dir = direction.iloc[-2], direction.iloc[-1]
                 price = raw_df["close"].iloc[-1]
                 
-                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] CANDLE: {latest_candle_time}")
-                print(f"  Price: ${price:,.2f} | Dir: {'▲ (BUY)' if curr_dir==-1 else '▼ (SELL)'}")
+                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] NEW HA CANDLE: {latest_candle_time}")
+                print(f"  Market Price: ${price:,.2f} | Dir: {'▲' if curr_dir==-1 else '▼'}")
 
                 if curr_dir == -1 and prev_dir == 1:
-                    print("  >>> TREND FLIPPED BULLISH")
+                    print("  >>> HA TREND FLIPPED BULLISH (BUY)")
                     acc = get_account()
                     qty = (float(acc["cash"]) * RISK_PCT) / price
                     place_order("buy", qty)
                 elif curr_dir == 1 and prev_dir == -1:
-                    print("  >>> TREND FLIPPED BEARISH")
+                    print("  >>> HA TREND FLIPPED BEARISH (SELL)")
                     acc = get_account()
                     qty = (float(acc["cash"]) * RISK_PCT) / price
                     place_order("sell", qty)
+                else:
+                    print("  HA Trend consistent. Monitoring...")
             else:
-                print(f"  [HEARTBEAT] {datetime.now().strftime('%H:%M:%S')} | No flip detected.")
+                print(f"  [HEARTBEAT] {datetime.now().strftime('%H:%M:%S')} | Waiting for new candle...")
 
         except Exception as e:
             print(f"  [ERROR] {e}")
