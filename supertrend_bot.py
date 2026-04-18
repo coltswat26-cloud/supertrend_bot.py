@@ -3,27 +3,28 @@ import time
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime
+from threading import Thread
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
 API_KEY    = os.environ.get("ALPACA_API_KEY")
 API_SECRET = os.environ.get("ALPACA_API_SECRET")
 
 SYMBOL     = "BTC/USD"
-TIMEFRAME  = "1Min"      # Swapped to 1-Minute
+TIMEFRAME  = "1Min"      
 ATR_LEN    = 10
 MULT       = 1.5
-BUY_AMOUNT_USD = 20000   
-POLL_SECS  = 10          # Faster polling for 1-minute candles
+BUY_AMOUNT_USD = 15000   # Updated to $15,000
+POLL_SECS  = 15          # Slightly slower to prevent rate limiting
 
 # ── RISK SETTINGS ─────────────────────────────────────────────────────────────
-TAKE_PROFIT_PCT      = 0.02    # 2% Profit Target
-TRAILING_STOP_AMOUNT = 50.00  # SELL if price drops $150 from its peak
+TAKE_PROFIT_PCT      = 0.02    # 2% Target
+TRAILING_STOP_AMOUNT = 150.00  # $150 Dollar-based drop from peak
 
 # ── ENDPOINTS ─────────────────────────────────────────────────────────────────
 BASE_URL      = "https://paper-api.alpaca.markets"
 DATA_URL      = "https://data.alpaca.markets/v1beta3/crypto/us"
-ACCOUNT_URL   = f"{BASE_URL}/v2/account"
 ORDERS_URL    = f"{BASE_URL}/v2/orders"
 POSITIONS_URL = f"{BASE_URL}/v2/positions"
 
@@ -36,12 +37,25 @@ HEADERS = {
 entry_price = 0.0
 peak_price  = 0.0
 
+# ── RAILWAY STABILITY: MINIMAL WEB SERVER ────────────────────────────────────
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive")
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
 # ── DATA & MATH FUNCTIONS ─────────────────────────────────────────────────────
 
-def get_candles(limit=300):
+def get_candles(limit=200):
     params = {"symbols": SYMBOL, "timeframe": TIMEFRAME, "limit": limit, "sort": "desc"}
     try:
-        r = requests.get(f"{DATA_URL}/bars", params=params, headers=HEADERS)
+        # Added 10s timeout to prevent hanging
+        r = requests.get(f"{DATA_URL}/bars", params=params, headers=HEADERS, timeout=10)
         if r.status_code != 200: return pd.DataFrame()
         data = r.json()
         bars = data.get("bars", {}).get(SYMBOL, [])
@@ -84,94 +98,86 @@ def calc_supertrend(df, atr_len, mult):
 # ── TRADING FUNCTIONS ─────────────────────────────────────────────────────────
 
 def get_btc_position():
-    r = requests.get(f"{POSITIONS_URL}/BTCUSD", headers=HEADERS)
-    if r.status_code == 200:
-        pos = r.json()
-        return float(pos.get("qty", 0)), float(pos.get("avg_entry_price", 0))
+    try:
+        r = requests.get(f"{POSITIONS_URL}/BTCUSD", headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            pos = r.json()
+            return float(pos.get("qty", 0)), float(pos.get("avg_entry_price", 0))
+    except:
+        pass
     return 0.0, 0.0
 
 def place_buy_order():
     data = {"symbol": SYMBOL, "notional": str(BUY_AMOUNT_USD), "side": "buy", "type": "market", "time_in_force": "gtc"}
-    r = requests.post(ORDERS_URL, json=data, headers=HEADERS)
-    print(f"  [BUY] Spent ${BUY_AMOUNT_USD} | Status: {r.status_code}")
+    requests.post(ORDERS_URL, json=data, headers=HEADERS, timeout=10)
+    print(f"  [BUY] Spent ${BUY_AMOUNT_USD}")
 
 def place_sell_order(qty, reason="Signal"):
     if qty <= 0: return
     data = {"symbol": SYMBOL, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "gtc"}
-    r = requests.post(ORDERS_URL, json=data, headers=HEADERS)
-    print(f"  [SELL] {reason} | Sold {qty} BTC | Status: {r.status_code}")
+    requests.post(ORDERS_URL, json=data, headers=HEADERS, timeout=10)
+    print(f"  [SELL] {reason} | Qty: {qty}")
 
 # ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 
-def main():
+def trade_loop():
     global entry_price, peak_price
-    print("=" * 40)
-    print("  BOT STARTING: 1m TIMEFRAME + TP/TS")
-    print("=" * 40)
+    print("  >>> TRADING LOOP STARTED")
     last_candle_time = None
 
     while True:
         try:
-            raw_df = get_candles(limit=300)
+            raw_df = get_candles(limit=100)
             if raw_df.empty or len(raw_df) < 5:
                 time.sleep(POLL_SECS)
                 continue
 
             df = apply_heikin_ashi(raw_df)
-            current_price = raw_df.iloc[-1]['close'] # Real market price
+            current_price = raw_df.iloc[-1]['close'] 
             latest_candle_time = df.index[-2]   
 
-            # --- 1. REAL-TIME RISK MANAGEMENT ---
             qty_owned, avg_entry = get_btc_position()
             
             if qty_owned > 0:
-                # Update tracking
                 if peak_price == 0 or avg_entry != entry_price:
                     entry_price = avg_entry
                     peak_price = current_price
                 
                 peak_price = max(peak_price, current_price)
                 
-                # A) TAKE PROFIT (2%)
-                tp_price = entry_price * (1 + TAKE_PROFIT_PCT)
-                if current_price >= tp_price:
-                    place_sell_order(qty_owned, reason="TARGET HIT (2%)")
+                # Risk Exits
+                if current_price >= (entry_price * (1 + TAKE_PROFIT_PCT)):
+                    place_sell_order(qty_owned, reason="TAKE PROFIT HIT")
                     peak_price = 0
                     continue
 
-                # B) DOLLAR-BASED TRAILING STOP
-                ts_threshold = peak_price - TRAILING_STOP_AMOUNT
-                if current_price <= ts_threshold:
+                if current_price <= (peak_price - TRAILING_STOP_AMOUNT):
                     place_sell_order(qty_owned, reason=f"TRAILING STOP (${TRAILING_STOP_AMOUNT})")
                     peak_price = 0
                     continue
 
-            # --- 2. TREND SIGNAL LOGIC ---
+            # Signal Check
             if latest_candle_time != last_candle_time:
                 last_candle_time = latest_candle_time
                 closed = df.iloc[:-1].copy()
                 _, direction = calc_supertrend(closed, ATR_LEN, MULT)
                 prev_dir, curr_dir = direction.iloc[-2], direction.iloc[-1]
                 
-                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] CANDLE: {latest_candle_time} | PRICE: ${current_price:,.2f}")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Price: ${current_price:,.2f} | Dir: {'UP' if curr_dir==-1 else 'DOWN'}")
 
-                if curr_dir == -1 and prev_dir == 1:
-                    if qty_owned == 0:
-                        print("  >>> TREND BULLISH: Buying...")
-                        place_buy_order()
-                elif curr_dir == 1 and prev_dir == -1:
-                    if qty_owned > 0:
-                        print("  >>> TREND BEARISH: Closing...")
-                        place_sell_order(qty_owned, reason="SUPERTREND FLIP")
-                        peak_price = 0
-            else:
-                # Optional: print current status every few heartbeats
-                pass
-
+                if curr_dir == -1 and prev_dir == 1 and qty_owned == 0:
+                    place_buy_order()
+                elif curr_dir == 1 and prev_dir == -1 and qty_owned > 0:
+                    place_sell_order(qty_owned, reason="TREND FLIP")
+                    peak_price = 0
+            
         except Exception as e:
-            print(f"  [ERROR] {e}")
+            print(f"  [LOOP ERROR] {e}")
         
         time.sleep(POLL_SECS)
 
 if __name__ == "__main__":
-    main()
+    # Start health server in background thread
+    Thread(target=run_health_server, daemon=True).start()
+    # Start trading loop
+    trade_loop()
