@@ -13,12 +13,12 @@ SYMBOL     = "BTC/USD"
 TIMEFRAME  = "1Min"      # Swapped to 1-Minute
 ATR_LEN    = 10
 MULT       = 1.5
-BUY_AMOUNT_USD = 10000   
+BUY_AMOUNT_USD = 20000   
 POLL_SECS  = 10          # Faster polling for 1-minute candles
 
 # ── RISK SETTINGS ─────────────────────────────────────────────────────────────
 TAKE_PROFIT_PCT      = 0.02    # 2% Profit Target
-TRAILING_STOP_AMOUNT = 150.00  # SELL if price drops $150 from its peak
+TRAILING_STOP_AMOUNT = 50.00  # SELL if price drops $150 from its peak
 
 # ── ENDPOINTS ─────────────────────────────────────────────────────────────────
 BASE_URL      = "https://paper-api.alpaca.markets"
