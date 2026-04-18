@@ -19,8 +19,8 @@ BUY_AMOUNT_USD = 15000   # Your requested base entry
 POLL_SECS  = 15          
 
 # ── RISK SETTINGS ─────────────────────────────────────────────────────────────
-TAKE_PROFIT_PCT      = 0.02    
-TRAILING_STOP_AMOUNT = 150.00  
+TAKE_PROFIT_PCT      = 0.005  
+TRAILING_STOP_AMOUNT = 300.00  
 
 # ── ENDPOINTS ─────────────────────────────────────────────────────────────────
 BASE_URL      = "https://paper-api.alpaca.markets"
